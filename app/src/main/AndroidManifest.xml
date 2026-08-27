@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.RevivetendoAdmin">
+
+        <!--
+          allowBackup=false is deliberate, not boilerplate: the client
+          certificate's private key lives in this app's AndroidKeyStore
+          namespace (see cert/ClientCertStore.kt). Android's cloud backup and
+          device-to-device transfer both walk app-private storage, and while
+          AndroidKeyStore key material itself isn't literally copyable, this
+          keeps the whole app data directory - including anything cached
+          around the cert - out of any backup path entirely, rather than
+          relying on backup-rules exclusions staying correct forever.
+        -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.RevivetendoAdmin">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
