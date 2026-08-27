@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 class ApiException(message: String, val httpCode: Int? = null) : Exception(message)
 
 /**
- * Talks to relay-admin's /admin/api/v1/* JSON API over mTLS, presenting the
+ * Talks to relay-admin's /admin/api/v1/... JSON API over mTLS, presenting the
  * cert held in [ClientCertStore]. Real request path in production: this app
  * --mTLS--> the Apache2 box at BASE_HOST (which forwards the raw client cert
  * PEM via a header) --> nginx --> relay-admin, which does the actual crypto

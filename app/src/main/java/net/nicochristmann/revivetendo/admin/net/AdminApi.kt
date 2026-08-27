@@ -14,7 +14,7 @@ import kotlinx.serialization.json.put
 private val lenientJson = Json { ignoreUnknownKeys = true }
 
 /**
- * Thin typed wrapper around relay-admin's /admin/api/v1/* JSON API
+ * Thin typed wrapper around relay-admin's /admin/api/v1/... JSON API
  * (net.nicochristmann.revivetendo.admin.net.ApiClient does the actual HTTP
  * work over mTLS). One function per endpoint, matching the Go handlers in
  * relay-admin/main.go's "JSON admin API" section field-for-field.
