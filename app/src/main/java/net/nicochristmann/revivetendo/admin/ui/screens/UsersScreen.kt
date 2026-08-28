@@ -29,15 +29,16 @@ import net.nicochristmann.revivetendo.admin.net.UserAccessEntry
 
 @Composable
 fun UsersScreen(onBack: () -> Unit) {
-    var game by remember { mutableStateOf(gameServerTitles.keys.first()) }
+    var game by remember { mutableStateOf("") }
     var users by remember { mutableStateOf<List<UserAccessEntry>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var pid by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     fun refresh() {
+        if (game.isBlank()) return
         scope.launch {
             loading = true
             error = null
@@ -56,10 +57,13 @@ fun UsersScreen(onBack: () -> Unit) {
     SectionScaffold("Game whitelist", onBack, error, loading) {
         LazyColumn(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             item {
-                GameServerDropdown(game, { game = it }, "Game", allowBlank = false, modifier = Modifier.fillMaxWidth())
+                GameServerDropdown(game, { game = it }, "Game", allowBlank = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
+                if (game.isBlank()) {
+                    Text("Pick a game to see its whitelist.", style = MaterialTheme.typography.bodyMedium)
+                }
             }
-            items(users) { u ->
+            items(if (game.isBlank()) emptyList() else users) { u ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(u.pnid ?: u.pid.toString(), style = MaterialTheme.typography.titleSmall)
@@ -78,21 +82,24 @@ fun UsersScreen(onBack: () -> Unit) {
                 Text("Add user", style = MaterialTheme.typography.titleMedium)
                 LabeledField(pid, { pid = it }, "PID", Modifier.fillMaxWidth())
                 LabeledField(note, { note = it }, "Label (optional)", Modifier.fillMaxWidth())
-                Button(onClick = {
-                    val pidLong = pid.toLongOrNull()
-                    if (pidLong == null) {
-                        error = "Invalid PID"
-                        return@Button
-                    }
-                    scope.launch {
-                        try {
-                            users = withContext(Dispatchers.IO) { AdminApi.addUser(game, pidLong, note.ifBlank { null }) }
-                            pid = ""; note = ""
-                        } catch (e: Exception) {
-                            error = e.message
+                Button(
+                    enabled = game.isNotBlank(),
+                    onClick = {
+                        val pidLong = pid.toLongOrNull()
+                        if (pidLong == null) {
+                            error = "Invalid PID"
+                            return@Button
                         }
-                    }
-                }) { Text("Add") }
+                        scope.launch {
+                            try {
+                                users = withContext(Dispatchers.IO) { AdminApi.addUser(game, pidLong, note.ifBlank { null }) }
+                                pid = ""; note = ""
+                            } catch (e: Exception) {
+                                error = e.message
+                            }
+                        }
+                    },
+                ) { Text("Add") }
             }
         }
     }

@@ -28,6 +28,7 @@ import net.nicochristmann.revivetendo.admin.net.ReviewEntry
 
 @Composable
 fun ReviewScreen(onBack: () -> Unit) {
+    val titles = rememberGameTitles()
     var entries by remember { mutableStateOf<List<ReviewEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -55,7 +56,7 @@ fun ReviewScreen(onBack: () -> Unit) {
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(e.pnid ?: e.pid.toString(), style = MaterialTheme.typography.titleSmall)
-                        Text("${gameServerTitles[e.gameServerId] ?: e.gameServerId} · ${e.attempts} attempts")
+                        Text("${titles[e.gameServerId] ?: e.gameServerId} · ${e.attempts} attempts")
                         Row {
                             Button(onClick = {
                                 scope.launch {
