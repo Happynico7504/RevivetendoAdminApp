@@ -1,13 +1,11 @@
 package net.nicochristmann.revivetendo.admin.cert
 
-import android.security.keystore.KeyProperties
-import android.security.keystore.KeyProtection
+import android.content.Context
+import androidx.security.crypto.EncryptedFile
+import androidx.security.crypto.MasterKey
 import java.io.ByteArrayInputStream
-import java.io.InputStream
+import java.io.File
 import java.security.KeyStore
-import java.security.PrivateKey
-import java.security.cert.Certificate
-import java.security.cert.X509Certificate
 import java.util.Date
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
@@ -15,18 +13,29 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 /**
- * Holds the admin mTLS client certificate + private key in this app's own
- * AndroidKeyStore namespace (alias [ALIAS]), never Android's system-wide
- * "Trusted credentials" store. A normal app can't manage that store silently:
- * installing into it always shows a system confirmation dialog, and removing
- * an old entry from it needs device-owner/MDM privileges no ordinary app has.
- * Keeping the cert app-private means check/install/replace/delete are all
- * fully automatic with zero dialogs - it just means the cert is only usable
- * by this app's own network calls, which is all it's ever needed for.
+ * Holds the admin mTLS client certificate + private key app-privately, never
+ * in Android's system-wide "Trusted credentials" store (a normal app can't
+ * manage that silently - install always shows a system dialog, and removing
+ * an old entry needs device-owner/MDM privileges no ordinary app has).
+ *
+ * The PKCS#12 bytes are encrypted at rest with a hardware-backed AES key
+ * (Jetpack Security's EncryptedFile/MasterKey) but the TLS client-cert
+ * signing itself is done by a plain in-memory "PKCS12" KeyStore, not
+ * AndroidKeyStore. That's deliberate: importing the RSA key straight into
+ * AndroidKeyStore and having conscrypt sign the TLS 1.3 CertificateVerify
+ * through the device's real Keymaster/StrongBox HAL hit a
+ * "RSA routines: internal error" on real hardware with BOTH PKCS1 and PSS
+ * padding authorized - a known class of Keymaster HAL bug for raw RSA TLS
+ * client-auth signing that doesn't affect AES encrypt/decrypt (a far
+ * simpler, universally well-supported HAL operation). Doing the RSA sign in
+ * pure software sidesteps that device-specific HAL risk entirely, at the
+ * cost of the key briefly existing in process memory during a TLS handshake
+ * - an acceptable trade for a personal admin tool.
  */
 object ClientCertStore {
-    private const val ALIAS = "revivetendo_admin_client_cert"
-    private const val KEYSTORE_TYPE = "AndroidKeyStore"
+    private const val FILE_NAME = "admin_client_cert.p12.enc"
+    private const val MASTER_KEY_ALIAS = "revivetendo_admin_master_key"
+    private val EMPTY_PASSWORD = CharArray(0)
 
     class InvalidCertException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -41,20 +50,48 @@ object ClientCertStore {
         }
     }
 
-    private fun keyStore(): KeyStore =
-        KeyStore.getInstance(KEYSTORE_TYPE).apply { load(null) }
+    private lateinit var appContext: Context
 
-    fun isCertInstalled(): Boolean =
-        try {
-            keyStore().containsAlias(ALIAS)
-        } catch (e: Exception) {
-            false
+    /** Must be called once (MainActivity.onCreate / Worker.doWork) before any other member. */
+    fun init(context: Context) {
+        if (!::appContext.isInitialized) {
+            appContext = context.applicationContext
         }
+    }
+
+    private fun certFile(): File = File(appContext.filesDir, FILE_NAME)
+
+    private fun masterKey(): MasterKey =
+        MasterKey.Builder(appContext, MASTER_KEY_ALIAS)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+    private fun encryptedFile(file: File): EncryptedFile =
+        EncryptedFile.Builder(appContext, file, masterKey(), EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB).build()
+
+    private fun readDecryptedBytes(): ByteArray? {
+        val file = certFile()
+        if (!file.exists()) return null
+        return encryptedFile(file).openFileInput().use { it.readBytes() }
+    }
+
+    private fun loadPkcs12(bytes: ByteArray): KeyStore {
+        val p12 = KeyStore.getInstance("PKCS12")
+        try {
+            p12.load(ByteArrayInputStream(bytes), EMPTY_PASSWORD)
+        } catch (e: Exception) {
+            throw InvalidCertException("This file isn't a valid client certificate bundle (.p12).", e)
+        }
+        return p12
+    }
+
+    fun isCertInstalled(): Boolean = certFile().exists()
 
     fun getCertInfo(): CertInfo? {
-        val ks = keyStore()
-        if (!ks.containsAlias(ALIAS)) return null
-        val cert = ks.getCertificate(ALIAS) as? X509Certificate ?: return null
+        val bytes = readDecryptedBytes() ?: return null
+        val p12 = loadPkcs12(bytes)
+        val alias = p12.aliases().asSequence().firstOrNull { p12.isKeyEntry(it) } ?: return null
+        val cert = p12.getCertificate(alias) as? java.security.cert.X509Certificate ?: return null
         return CertInfo(
             subject = cert.subjectX500Principal.name,
             issuedAt = cert.notBefore,
@@ -62,62 +99,31 @@ object ClientCertStore {
         )
     }
 
-    fun importPkcs12(bytes: ByteArray, password: CharArray = CharArray(0)) {
-        importPkcs12(ByteArrayInputStream(bytes), password)
-    }
-
-    /** Deletes any existing entry, then imports the given PKCS#12 bundle. */
-    fun importPkcs12(input: InputStream, password: CharArray = CharArray(0)) {
-        val p12 = KeyStore.getInstance("PKCS12")
-        try {
-            p12.load(input, password)
-        } catch (e: Exception) {
-            throw InvalidCertException("This file isn't a valid client certificate bundle (.p12).", e)
+    /** Validates the bundle, then atomically replaces any existing stored cert. */
+    fun importPkcs12(bytes: ByteArray) {
+        val p12 = loadPkcs12(bytes)
+        if (p12.aliases().asSequence().none { p12.isKeyEntry(it) }) {
+            throw InvalidCertException("The certificate bundle contains no private key entry.")
         }
 
-        val alias = p12.aliases().asSequence().firstOrNull { p12.isKeyEntry(it) }
-            ?: throw InvalidCertException("The certificate bundle contains no private key entry.")
-
-        val key = p12.getKey(alias, password) as? PrivateKey
-            ?: throw InvalidCertException("Couldn't read the private key from the certificate bundle.")
-        val chain: Array<Certificate> = p12.getCertificateChain(alias)
-            ?: throw InvalidCertException("The certificate bundle has no certificate chain.")
-
-        val protection = KeyProtection.Builder(KeyProperties.PURPOSE_SIGN)
-            .setDigests(
-                KeyProperties.DIGEST_SHA256,
-                KeyProperties.DIGEST_SHA384,
-                KeyProperties.DIGEST_SHA512,
-            )
-            // TLS 1.3's CertificateVerify requires RSA-PSS, not PKCS1 - without
-            // authorizing PSS here, AndroidKeyStore refuses to sign with it and
-            // BoringSSL surfaces that as a generic "RSA routines: internal
-            // error" deep in conscrypt rather than a clear permission error.
-            .setSignaturePaddings(
-                KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,
-                KeyProperties.SIGNATURE_PADDING_RSA_PSS,
-            )
-            .build()
-
-        val ks = keyStore()
-        if (ks.containsAlias(ALIAS)) {
-            ks.deleteEntry(ALIAS)
+        val file = certFile()
+        if (file.exists()) {
+            file.delete()
         }
-        ks.setEntry(ALIAS, KeyStore.PrivateKeyEntry(key, chain), protection)
+        encryptedFile(file).openFileOutput().use { it.write(bytes) }
     }
 
     fun deleteCert() {
-        val ks = keyStore()
-        if (ks.containsAlias(ALIAS)) {
-            ks.deleteEntry(ALIAS)
-        }
+        certFile().delete()
     }
 
     /** Builds a fresh SSLContext presenting this app's stored client cert for mTLS. */
     fun buildSslContext(): Pair<SSLContext, X509TrustManager> {
-        val ks = keyStore()
+        val bytes = readDecryptedBytes() ?: throw InvalidCertException("No certificate installed.")
+        val p12 = loadPkcs12(bytes)
+
         val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-        kmf.init(ks, null)
+        kmf.init(p12, EMPTY_PASSWORD)
 
         val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
         tmf.init(null as KeyStore?)

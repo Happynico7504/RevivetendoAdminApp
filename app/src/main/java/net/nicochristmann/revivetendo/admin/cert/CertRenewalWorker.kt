@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
  */
 class CertRenewalWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        ClientCertStore.init(applicationContext)
         val info = ClientCertStore.getCertInfo() ?: return@withContext Result.failure()
         if (info.daysRemaining() > RENEW_THRESHOLD_DAYS) return@withContext Result.success()
         try {
