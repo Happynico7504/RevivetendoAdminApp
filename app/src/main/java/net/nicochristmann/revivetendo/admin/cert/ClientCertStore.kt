@@ -6,6 +6,8 @@ import androidx.security.crypto.MasterKey
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.cert.X509Certificate
 import java.util.Date
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
@@ -132,5 +134,27 @@ object ClientCertStore {
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(kmf.keyManagers, arrayOf(trustManager), null)
         return sslContext to trustManager
+    }
+
+    /**
+     * Extracts signing material for manual TLS client-cert flows that can't
+     * use an SSLContext directly - namely WebView's
+     * WebViewClient.onReceivedClientCertRequest, which wants a raw
+     * (PrivateKey, certificate chain) pair for ClientCertRequest.proceed().
+     * Mirrors exactly what KeyManagerFactory does internally for
+     * buildSslContext()'s OkHttp path, sourced from the same KeyStore -
+     * getCertificateChain (not getCertificate, which only returns the leaf)
+     * is what makes that parity hold.
+     */
+    fun getKeyAndChain(): Pair<PrivateKey, Array<X509Certificate>>? {
+        val bytes = readDecryptedBytes() ?: return null
+        val p12 = loadPkcs12(bytes)
+        val alias = p12.aliases().asSequence().firstOrNull { p12.isKeyEntry(it) } ?: return null
+        val key = p12.getKey(alias, EMPTY_PASSWORD) as? PrivateKey ?: return null
+        val chain = p12.getCertificateChain(alias)
+            ?.map { it as X509Certificate }
+            ?.toTypedArray()
+            ?: return null
+        return key to chain
     }
 }
