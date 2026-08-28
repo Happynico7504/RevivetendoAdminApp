@@ -27,23 +27,6 @@ import kotlinx.coroutines.withContext
 import net.nicochristmann.revivetendo.admin.net.AdminApi
 import net.nicochristmann.revivetendo.admin.net.UserAccessEntry
 
-// Mirrors relay-admin's gameServerTitles map (main.go) - purely a display
-// label lookup, the server is the source of truth for which IDs are valid.
-val gameServerTitles = mapOf(
-    "00003200" to "Friends / Presence",
-    "1005A000" to "WiiU Chat",
-    "1010EB00" to "Mario Kart 8",
-    "1012F100" to "Wii Sports Club",
-    "10145E00" to "Angry Birds Star Wars",
-    "10176A00" to "Super Mario Maker",
-    "100E4B00" to "Super Smash Bros.",
-    "1014B700" to "Minecraft: WiiU Edition",
-    "10138B00" to "Pokemon Art Academy",
-    "10104E00" to "Animal Crossing: amiibo Festival",
-    "1019EC00" to "Yo-Kai Watch Blasters",
-    "10189B00" to "Pokémon Rumble World",
-)
-
 @Composable
 fun UsersScreen(onBack: () -> Unit) {
     var game by remember { mutableStateOf(gameServerTitles.keys.first()) }
@@ -73,8 +56,7 @@ fun UsersScreen(onBack: () -> Unit) {
     SectionScaffold("Game whitelist", onBack, error, loading) {
         LazyColumn(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             item {
-                Text("Game: ${gameServerTitles[game] ?: game}", style = MaterialTheme.typography.titleMedium)
-                LabeledField(game, { game = it.uppercase() }, "Game server ID (hex)", Modifier.fillMaxWidth())
+                GameServerDropdown(game, { game = it }, "Game", allowBlank = false, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
             }
             items(users) { u ->

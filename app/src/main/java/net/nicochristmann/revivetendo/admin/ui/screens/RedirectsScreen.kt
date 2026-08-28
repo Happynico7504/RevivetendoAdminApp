@@ -91,7 +91,7 @@ fun RedirectsScreen(onBack: () -> Unit) {
                 LabeledField(fromHost, { fromHost = it }, "From host", Modifier.fillMaxWidth())
                 LabeledField(toHost, { toHost = it }, "To host", Modifier.fillMaxWidth())
                 LabeledField(address, { address = it }, "Address (optional)", Modifier.fillMaxWidth())
-                LabeledField(gameServerId, { gameServerId = it }, "Game server ID (optional)", Modifier.fillMaxWidth())
+                GameServerDropdown(gameServerId, { gameServerId = it }, "Game server (optional)", allowBlank = true, modifier = Modifier.fillMaxWidth())
                 LabeledField(port, { port = it }, "Port (optional)", Modifier.fillMaxWidth())
                 Button(onClick = {
                     scope.launch {
