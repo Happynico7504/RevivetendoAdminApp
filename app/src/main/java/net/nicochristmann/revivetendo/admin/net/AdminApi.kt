@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -25,7 +26,13 @@ object AdminApi {
         if (obj["ok"]?.jsonPrimitive?.boolean != true) {
             throw ApiException(obj["error"]?.jsonPrimitive?.content ?: "request failed")
         }
-        val data = obj["data"] ?: return emptyList()
+        val data = obj["data"]
+        // Go's encoding/json marshals a nil slice as JSON null, not [] - an
+        // empty list (no bans yet, empty review queue, etc.) hits this even
+        // though the server-side handler is now fixed to always emit [].
+        // Keep this client-side guard too so a future endpoint can't
+        // reintroduce the same crash.
+        if (data == null || data is JsonNull) return emptyList()
         return lenientJson.decodeFromJsonElement(ListSerializer(serializer), data)
     }
 
