@@ -89,7 +89,14 @@ object ClientCertStore {
                 KeyProperties.DIGEST_SHA384,
                 KeyProperties.DIGEST_SHA512,
             )
-            .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+            // TLS 1.3's CertificateVerify requires RSA-PSS, not PKCS1 - without
+            // authorizing PSS here, AndroidKeyStore refuses to sign with it and
+            // BoringSSL surfaces that as a generic "RSA routines: internal
+            // error" deep in conscrypt rather than a clear permission error.
+            .setSignaturePaddings(
+                KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,
+                KeyProperties.SIGNATURE_PADDING_RSA_PSS,
+            )
             .build()
 
         val ks = keyStore()
