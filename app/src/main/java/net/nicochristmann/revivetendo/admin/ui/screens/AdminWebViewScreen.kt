@@ -43,7 +43,9 @@ fun AdminWebViewScreen(onCertProblem: (String) -> Unit, onExit: () -> Unit) {
                     // Pick up a cert renewed/reimported while backgrounded
                     // instead of reusing WebView's cached per-host:port
                     // client-cert decision from before the change.
-                    webView.clearClientCertPreferences {}
+                    // clearClientCertPreferences is a *static* WebView
+                    // method - called on the class, not the instance.
+                    WebView.clearClientCertPreferences {}
                 }
                 Lifecycle.Event.ON_PAUSE -> webView.onPause()
                 else -> {}
